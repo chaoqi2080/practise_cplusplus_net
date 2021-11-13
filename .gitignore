@@ -1,4 +1,4 @@
-﻿.idea
-cmake-build-release
-cmake-build-debug
-bin
+﻿tcp_client/.idea
+tcp_client/cmake-build-debug
+tcp_server/.idea
+tcp_server/cmake-build-debug
