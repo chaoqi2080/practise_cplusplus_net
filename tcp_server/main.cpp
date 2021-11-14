@@ -4,6 +4,69 @@
 #include <windows.h>
 #include <WinSock2.h>
 #include <stdio.h>
+#include <cstdint>
+
+enum CMD
+{
+    CMD_LOGIN,
+    CMD_LOGIN_RESULT,
+    CMD_LOGOUT,
+    CMD_LOGOUT_RESULT,
+
+    CMD_ERROR,
+};
+
+struct DataHeader
+{
+    DataHeader()
+    {
+        cmd = CMD_ERROR;
+        data_length = sizeof(DataHeader);
+    }
+    uint16_t cmd;
+    uint16_t data_length;
+};
+
+struct Login : public DataHeader
+{
+    Login()
+    {
+        cmd = CMD_LOGIN;
+        data_length = sizeof(Login);
+    }
+    char user_name[64];
+    char user_pwd[64];
+};
+
+struct LoginResult : public DataHeader
+{
+    LoginResult()
+    {
+        cmd = CMD_LOGIN_RESULT;
+        data_length = sizeof(LoginResult);
+    }
+    uint16_t code;
+};
+
+struct Logout : public DataHeader
+{
+    Logout()
+    {
+        cmd = CMD_LOGOUT;
+        data_length = sizeof(Logout);
+    }
+    char user_name[64];
+};
+
+struct LogoutResult : public DataHeader
+{
+    LogoutResult()
+    {
+        cmd = CMD_LOGOUT_RESULT;
+        data_length = sizeof(LogoutResult);
+    }
+    uint16_t code;
+};
 
 int main() {
     printf("[server start...]\n");
@@ -43,33 +106,46 @@ int main() {
     printf("new client join socket:%llu, ip:%s\n", client_socket, inet_ntoa(client_addr.sin_addr));
 
     while (true) {
-        char recv_buf[4096] = {};
-        int recv_len = recv(client_socket, recv_buf, 4096, 0);
-        if (recv_len < 0) {
-            printf("client exit\n");
+        DataHeader dh = {};
+        int recv_len = recv(client_socket, (char*)&dh, sizeof(dh), 0);
+        if (recv_len < 0)
+        {
+            printf("read data header fail.\n");
             break;
         }
 
-        printf("recv data from client:%s\n", recv_buf);
+        printf("recv data from client, cmd:%d, data len:%d\n", dh.cmd, dh.data_length);
+        const int header_len = sizeof(DataHeader);
+        switch (dh.cmd) {
+            case CMD_LOGIN:
+            {
+                Login login = {};
+                recv(client_socket, (char*)&login+header_len , sizeof(login)-header_len, 0);
+                printf("user login name:%s, pwd:%s\n", login.user_name, login.user_pwd);
 
-        int write_len = 0;
-        if (0 == strcmp(recv_buf, "get_name")) {
-            char reply_buf[] = {"zhang shan"};
-            write_len = send(client_socket, reply_buf, strlen(reply_buf), 0);
-        } else if (0 == strcmp(recv_buf, "get_age")) {
-            char reply_buf[] = {"18"};
-            write_len = send(client_socket, reply_buf, strlen(reply_buf), 0);
-        } else if (0 == strcmp(recv_buf, "exit")) {
-            char reply_buf[] = {"exit"};
-            write_len = send(client_socket, reply_buf, strlen(reply_buf), 0);
-            printf("client exit\n");
+                LoginResult loginResult;
+                loginResult.code = 0;
+                send(client_socket, (const char*)&loginResult, sizeof(loginResult), 0);
+            }
             break;
-        } else {
-            char reply_buf[] = {"unknown command"};
-            write_len = send(client_socket, reply_buf, strlen(reply_buf), 0);
-        }
+            case CMD_LOGOUT:
+            {
+                Logout logout = {};
+                recv(client_socket, (char*)&logout+header_len, sizeof(logout)-header_len, 0);
+                printf("user logout name:%s\n", logout.user_name);
 
-        printf("write %d to client\n", write_len);
+                LogoutResult logoutResult;
+                logoutResult.code = 0;
+                send(client_socket, (const char*)&logoutResult, sizeof(logoutResult), 0);
+            }
+            break;
+            default:
+            {
+                DataHeader dh;
+                send(client_socket, (const char*)&dh, sizeof(dh), 0);
+                printf("unknown command\n");
+            }
+        }
     }
 
     //close the server socket.
