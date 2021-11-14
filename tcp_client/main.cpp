@@ -1,11 +1,22 @@
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <windows.h>
 #include <WinSock2.h>
-#include <stdio.h>
-#include <cstdint>
 #include <thread>
+#else
+#define INVALID_SOCKET  (SOCKET)(~0)
+#define SOCKET_ERROR            (-1)
+#define SOCKET int32_t
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <cstdio>
+#include <cstring>
+#include <unistd.h>
+#include <thread>
+#endif
 
 enum CMD
 {
@@ -64,6 +75,15 @@ struct LogoutResult : public DataHeader
     uint16_t code;
 };
 
+void close_socket(SOCKET sock)
+{
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+}
+
 bool b_run = true;
 void handle_command(SOCKET sock)
 {
@@ -112,14 +132,14 @@ int processor(SOCKET sock)
             recv(sock, (char*)&loginResult+header_len, sizeof(loginResult)-header_len, 0);
             printf("login result code:%d\n", loginResult.code);
         }
-        break;
+            break;
         case CMD_LOGOUT_RESULT:
         {
             LogoutResult logoutResult = {};
             recv(sock, (char*)&logoutResult+header_len, sizeof(logoutResult)-header_len, 0);
             printf("logout result code:%d\n", logoutResult.code);
         }
-        break;
+            break;
         default:
         {
             printf("unknown command\n");
@@ -131,11 +151,12 @@ int processor(SOCKET sock)
 
 int main() {
     printf("[client start...]\n");
+#ifdef _WIN32
     //prepare the Windows environment.
     WORD ver = MAKEWORD(2, 2);
     WSADATA data;
     WSAStartup(ver, &data);
-
+#endif
     SOCKET _socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (INVALID_SOCKET == _socket) {
         printf("create socket fail\n");
@@ -145,7 +166,11 @@ int main() {
     sockaddr_in sock_in = {};
     sock_in.sin_family = AF_INET;
     sock_in.sin_port = htons(4567);
-    sock_in.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+#ifdef _WIN32
+    sock_in.sin_addr.S_un.S_addr = inet_addr("192.168.230.151");
+#else
+    sock_in.sin_addr.s_addr = inet_addr("127.0.0.1");
+#endif
     int ret = connect(_socket, (sockaddr*)&sock_in, sizeof(sock_in));
     if (SOCKET_ERROR == ret) {
         printf("connect server error\n");
@@ -181,8 +206,9 @@ int main() {
         }
     }
 
-    closesocket(_socket);
-
+    close_socket(_socket);
+#ifdef _WIN32
     WSACleanup();
+#endif
     return 0;
 }
