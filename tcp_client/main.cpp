@@ -5,6 +5,7 @@
 #include <WinSock2.h>
 #include <stdio.h>
 #include <cstdint>
+#include <thread>
 
 enum CMD
 {
@@ -63,6 +64,71 @@ struct LogoutResult : public DataHeader
     uint16_t code;
 };
 
+bool b_run = true;
+void handle_command(SOCKET sock)
+{
+    while (true) {
+        char cmd_buf[4096] = {};
+        int scan_len = scanf("%s", cmd_buf);
+        if (scan_len < 0) {
+            printf("scan input fail.\n");
+            break;
+        }
+
+        if (0 == strcmp(cmd_buf, "exit")) {
+            b_run = false;
+            printf("exit loop\n");
+            break;
+        } else if (0 == strcmp(cmd_buf, "login")) {
+            Login login;
+            strcpy(login.user_name, "zhangshan");
+            strcpy(login.user_pwd, "123456");
+
+            send(sock, (const char*)&login, sizeof(login), 0);
+        } else if (0 == strcmp(cmd_buf, "logout")) {
+            Logout logout;
+            strcpy(logout.user_name, "zhangshan");
+
+            send(sock, (const char*)&logout, sizeof(logout), 0);
+        }
+    }
+}
+
+int processor(SOCKET sock)
+{
+    DataHeader dh = {};
+    int read_len = recv(sock, (char*)&dh, sizeof(dh), 0);
+    if (read_len < 0) {
+        return -1;
+    }
+
+    printf("recv data from server cmd:%d, data length:%d\n", dh.cmd, dh.data_length);
+
+    const int header_len = sizeof(DataHeader);
+    switch (dh.cmd) {
+        case CMD_LOGIN_RESULT:
+        {
+            LoginResult loginResult = {};
+            recv(sock, (char*)&loginResult+header_len, sizeof(loginResult)-header_len, 0);
+            printf("login result code:%d\n", loginResult.code);
+        }
+        break;
+        case CMD_LOGOUT_RESULT:
+        {
+            LogoutResult logoutResult = {};
+            recv(sock, (char*)&logoutResult+header_len, sizeof(logoutResult)-header_len, 0);
+            printf("logout result code:%d\n", logoutResult.code);
+        }
+        break;
+        default:
+        {
+            printf("unknown command\n");
+        }
+    }
+
+    return 0;
+}
+
 int main() {
     printf("[client start...]\n");
     //prepare the Windows environment.
@@ -86,51 +152,33 @@ int main() {
         return ret;
     }
 
-    while (true) {
-        char cmd_buf[4096] = {};
-        int scan_len = scanf("%s", cmd_buf);
+    std::thread t(handle_command, _socket);
+    t.detach();
 
-        if (0 == strcmp(cmd_buf, "exit")) {
-            printf("exit loop\n");
+    while (b_run) {
+        fd_set read_fds;
+        fd_set write_fds;
+
+        FD_ZERO(&read_fds);
+        FD_ZERO(&write_fds);
+
+        FD_SET(_socket, &read_fds);
+        FD_SET(_socket, &write_fds);
+
+        timeval timeout{1, 0};
+        int ret = select(_socket+1, &read_fds, &write_fds, nullptr, &timeout);
+        if (ret < 0) {
+            printf("select error\n");
             break;
-        } else if (0 == strcmp(cmd_buf, "login")) {
-            Login login;
-            strcpy(login.user_name, "zhangshan");
-            strcpy(login.user_pwd, "123456");
-
-            send(_socket, (const char*)&login, sizeof(login), 0);
-        } else if (0 == strcmp(cmd_buf, "logout")) {
-            Logout logout;
-            strcpy(logout.user_name, "zhangshan");
-
-            send(_socket, (const char*)&logout, sizeof(logout), 0);
         }
 
-        DataHeader dh = {};
-        int read_len = recv(_socket, (char*)&dh, sizeof(dh), 0);
+        if (FD_ISSET(_socket, &read_fds)) {
+            FD_CLR(_socket, &read_fds);
 
-        printf("recv data from server cmd:%d, data length:%d\n", dh.cmd, dh.data_length);
-        switch (dh.cmd) {
-            case CMD_LOGIN_RESULT:
-            {
-                LoginResult loginResult = {};
-                recv(_socket, (char*)&loginResult, sizeof(loginResult), 0);
-                printf("login result code:%d\n", loginResult.code);
-            }
-            break;
-            case CMD_LOGOUT_RESULT:
-            {
-                LogoutResult logoutResult = {};
-                recv(_socket, (char*)&logoutResult, sizeof(logoutResult), 0);
-                printf("logout result code:%d\n", logoutResult.code);
-            }
-            break;
-            default:
-            {
-                printf("unknown command\n");
+            if (processor(_socket) < 0) {
+                break;
             }
         }
-
     }
 
     closesocket(_socket);

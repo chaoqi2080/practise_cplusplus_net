@@ -5,6 +5,7 @@
 #include <WinSock2.h>
 #include <stdio.h>
 #include <cstdint>
+#include <vector>
 
 enum CMD
 {
@@ -12,6 +13,7 @@ enum CMD
     CMD_LOGIN_RESULT,
     CMD_LOGOUT,
     CMD_LOGOUT_RESULT,
+    CMD_NEW_USER_JOIN,
 
     CMD_ERROR,
 };
@@ -68,6 +70,65 @@ struct LogoutResult : public DataHeader
     uint16_t code;
 };
 
+struct NewUserJoin : public DataHeader
+{
+    NewUserJoin()
+    {
+        cmd = CMD_NEW_USER_JOIN;
+        data_length = sizeof(NewUserJoin);
+    }
+
+    uint32_t user_id;
+};
+
+std::vector<SOCKET> _clients;
+
+int processor(SOCKET sock)
+{
+    DataHeader dh = {};
+    int recv_len = recv(sock, (char*)&dh, sizeof(dh), 0);
+    if (recv_len < 0)
+    {
+        printf("read data header fail.\n");
+        return -1;
+    }
+
+    printf("recv data from client, cmd:%d, data len:%d\n", dh.cmd, dh.data_length);
+    const int header_len = sizeof(DataHeader);
+    switch (dh.cmd) {
+        case CMD_LOGIN:
+        {
+            Login login = {};
+            recv(sock, (char*)&login+header_len , sizeof(login)-header_len, 0);
+            printf("user login name:%s, pwd:%s\n", login.user_name, login.user_pwd);
+
+            LoginResult loginResult;
+            loginResult.code = 0;
+            send(sock, (const char*)&loginResult, sizeof(loginResult), 0);
+        }
+            break;
+        case CMD_LOGOUT:
+        {
+            Logout logout = {};
+            recv(sock, (char*)&logout+header_len, sizeof(logout)-header_len, 0);
+            printf("user logout name:%s\n", logout.user_name);
+
+            LogoutResult logoutResult;
+            logoutResult.code = 0;
+            send(sock, (const char*)&logoutResult, sizeof(logoutResult), 0);
+        }
+            break;
+        default:
+        {
+            DataHeader dh;
+            send(sock, (const char*)&dh, sizeof(dh), 0);
+            printf("unknown command\n");
+        }
+    }
+
+    return 0;
+}
+
 int main() {
     printf("[server start...]\n");
     //prepare the Windows environment.
@@ -93,59 +154,75 @@ int main() {
         return ret;
     }
 
+    _clients.clear();
     //wait for new client connect
-    sockaddr_in client_addr = {};
-    int client_addr_len = sizeof(client_addr);
-
-    SOCKET client_socket = INVALID_SOCKET;
-    client_socket = accept(_socket, (sockaddr*)&client_addr, &client_addr_len);
-    if (INVALID_SOCKET == client_socket) {
-        printf("accept _socket error\n");
-        return ret;
-    }
-    printf("new client join socket:%llu, ip:%s\n", client_socket, inet_ntoa(client_addr.sin_addr));
-
     while (true) {
-        DataHeader dh = {};
-        int recv_len = recv(client_socket, (char*)&dh, sizeof(dh), 0);
-        if (recv_len < 0)
-        {
-            printf("read data header fail.\n");
+        fd_set read_fds;
+        fd_set write_fds;
+        timeval timeout;
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+
+        FD_ZERO(&read_fds);
+        FD_ZERO(&write_fds);
+        //
+        FD_SET(_socket, &read_fds);
+        FD_SET (_socket, &write_fds);
+
+        for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
+            FD_SET(*itr, &read_fds);
+            FD_SET (*itr, &write_fds);
+        }
+
+        int nfds = select(_socket+1, &read_fds, &write_fds, nullptr, nullptr);
+        if (nfds < 0) {
+            printf("select return < 0, break\n");
             break;
         }
 
-        printf("recv data from client, cmd:%d, data len:%d\n", dh.cmd, dh.data_length);
-        const int header_len = sizeof(DataHeader);
-        switch (dh.cmd) {
-            case CMD_LOGIN:
-            {
-                Login login = {};
-                recv(client_socket, (char*)&login+header_len , sizeof(login)-header_len, 0);
-                printf("user login name:%s, pwd:%s\n", login.user_name, login.user_pwd);
+        if (FD_ISSET(_socket, &read_fds)) {
+            FD_CLR(_socket, &read_fds);
 
-                LoginResult loginResult;
-                loginResult.code = 0;
-                send(client_socket, (const char*)&loginResult, sizeof(loginResult), 0);
-            }
-            break;
-            case CMD_LOGOUT:
-            {
-                Logout logout = {};
-                recv(client_socket, (char*)&logout+header_len, sizeof(logout)-header_len, 0);
-                printf("user logout name:%s\n", logout.user_name);
+            sockaddr_in client_addr = {};
+            int client_addr_len = sizeof(client_addr);
 
-                LogoutResult logoutResult;
-                logoutResult.code = 0;
-                send(client_socket, (const char*)&logoutResult, sizeof(logoutResult), 0);
+            SOCKET client_socket = INVALID_SOCKET;
+            client_socket = accept(_socket, (sockaddr*)&client_addr, &client_addr_len);
+            if (INVALID_SOCKET == client_socket) {
+                printf("accept _socket error\n");
+                return ret;
             }
-            break;
-            default:
-            {
-                DataHeader dh;
-                send(client_socket, (const char*)&dh, sizeof(dh), 0);
-                printf("unknown command\n");
+
+            NewUserJoin newUserJoin = {};
+            newUserJoin.user_id = client_socket;
+            for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
+                send(*itr, (const char*)&newUserJoin, sizeof(newUserJoin), 0);
             }
+
+            _clients.push_back(client_socket);
+            printf("new client join socket:%llu, ip:%s\n", client_socket, inet_ntoa(client_addr.sin_addr));
         }
+
+        for (auto itr = _clients.begin(); itr != _clients.end();) {
+            SOCKET cur_socket = *itr;
+
+            if (FD_ISSET(cur_socket, &read_fds)) {
+                FD_CLR(cur_socket, &read_fds);
+
+                if (processor(cur_socket) < 0) {
+                    closesocket(cur_socket);
+                    itr = _clients.erase(itr);
+                    continue;
+                }
+            }
+
+            ++itr;
+        }
+    }
+
+    //close all client socket.
+    for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
+        closesocket(*itr);
     }
 
     //close the server socket.
