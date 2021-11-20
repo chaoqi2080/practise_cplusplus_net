@@ -2,3 +2,7 @@
 tcp_client/cmake-build-debug
 tcp_server/.idea
 tcp_server/cmake-build-debug
+bin
+cmake-build-debug/Testing
+.idea
+cmake-build-debug
