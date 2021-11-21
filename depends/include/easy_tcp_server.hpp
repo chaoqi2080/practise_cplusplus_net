@@ -8,6 +8,7 @@
 #include "message_header.hpp"
 #include "tcp_client_s.hpp"
 #include "cell_net_utils.hpp"
+#include "cell_timestamp.hpp"
 
 class EasyTcpServer
 {
@@ -200,11 +201,11 @@ private:
         send2all(&newUserJoin);
 
         _clients.push_back(std::make_shared<TcpClientS>(new_socket));
-#ifdef _WIN32
-        printf("<%d> new client join socket:%llu, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
-#else
-        printf("<%d> new client join socket:%d, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
-#endif
+//#ifdef _WIN32
+//        printf("<%d> new client join socket:%llu, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
+//#else
+//        printf("<%d> new client join socket:%d, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
+//#endif
         return 0;
     }
 
@@ -253,7 +254,14 @@ private:
 
     int on_net_msg(std::shared_ptr<TcpClientS> clientS, DataHeader* header)
     {
-        //static uint32_t msg_count = 0;
+        _recv_count++;
+        auto t = _timer.get_elapsed_seconds();
+        if (t >= 1.0) {
+            printf("<%lf> socket<%d>clients<%d>recv_count<%d>\n", t, (int)_sock, (int)_clients.size(), _recv_count);
+            _timer.update();
+            _recv_count = 0;
+        }
+
         switch (header->cmd) {
             case CMD_LOGIN:
             {
@@ -321,6 +329,8 @@ private:
 private:
     SOCKET _sock = INVALID_SOCKET;
     std::vector<std::shared_ptr<TcpClientS>> _clients;
+    CellTimestamp _timer;
+    uint32_t _recv_count = 0;
 };
 
 #endif //PRACTISE_CPLUSPLUS_NET_EASY_TCP_SERVER_HPP
