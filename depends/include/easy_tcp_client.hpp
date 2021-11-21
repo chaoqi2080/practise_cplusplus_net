@@ -5,25 +5,6 @@
 #ifndef PRACTISE_CPLUSPLUS_NET_EASY_TCP_CLIENT_HPP
 #define PRACTISE_CPLUSPLUS_NET_EASY_TCP_CLIENT_HPP
 
-#ifdef _WIN32
-    #define WIN32_LEAN_AND_MEAN
-    #define _WINSOCK_DEPRECATED_NO_WARNINGS
-    #include <windows.h>
-    #include <WinSock2.h>
-#else
-    #define INVALID_SOCKET  (SOCKET)(~0)
-    #define SOCKET_ERROR            (-1)
-    #define SOCKET int32_t
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <cstdio>
-    #include <cstring>
-    #include <unistd.h>
-#endif
-
-#include <thread>
-
 #include "message_header.hpp"
 #include "cell_net_utils.hpp"
 
@@ -174,8 +155,13 @@ private:
                 break;
             case CMD_LOGOUT_RESULT:
                 {
-                    LogoutResult* logoutResult = (LogoutResult*)header;
-                    //printf("logout result code:%d\n", logoutResult->code);
+                    LogoutResult* logout_result = (LogoutResult*)header;
+                    //printf("logout result code:%d\n", logout_result->code);
+                }
+                break;
+            case CMD_NEW_USER_JOIN:
+                {
+                    NewUserJoin* user_join = (NewUserJoin*)header;
                 }
                 break;
             case CMD_ERROR:
@@ -183,6 +169,7 @@ private:
                     printf("CMD_ERROR\n");
                 }
                 break;
+
             default:
             {
                 printf("unknown command\n");

@@ -4,26 +4,10 @@
 
 #ifndef PRACTISE_CPLUSPLUS_NET_EASY_TCP_SERVER_HPP
 #define PRACTISE_CPLUSPLUS_NET_EASY_TCP_SERVER_HPP
-#ifdef _WIN32
-    #define WIN32_LEAN_AND_MEAN
-    #define _WINSOCK_DEPRECATED_NO_WARNINGS
-    #include <windows.h>
-    #include <WinSock2.h>
-#include <memory>
-
-#else
-    #define INVALID_SOCKET  (SOCKET)(~0)
-    #define SOCKET_ERROR            (-1)
-    #define SOCKET int32_t
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <unistd.h>
-#endif
-
 
 #include "message_header.hpp"
 #include "tcp_client_s.hpp"
+#include "cell_net_utils.hpp"
 
 class EasyTcpServer
 {
@@ -217,9 +201,9 @@ private:
 
         _clients.push_back(std::make_shared<TcpClientS>(new_socket));
 #ifdef _WIN32
-        printf("new client join socket:%llu, ip:%s\n", new_socket, inet_ntoa(client_addr.sin_addr));
+        printf("<%d> new client join socket:%llu, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
 #else
-        printf("new client join socket:%d, ip:%s\n", new_socket, inet_ntoa(client_addr.sin_addr));
+        printf("<%d> new client join socket:%d, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
 #endif
         return 0;
     }

@@ -1,9 +1,10 @@
 #include <thread>
 #include "easy_tcp_client.hpp"
 
-void handle_command(EasyTcpClient* easyTcpClient)
+volatile bool b_run = true;
+void handle_command()
 {
-    while (easyTcpClient->is_run()) {
+    while (true) {
         char cmd_buf[4096] = {};
         int scan_len = scanf("%s", cmd_buf);
         if (scan_len < 0) {
@@ -12,19 +13,8 @@ void handle_command(EasyTcpClient* easyTcpClient)
         }
 
         if (0 == strcmp(cmd_buf, "exit")) {
-
-            printf("exit loop\n");
-            easyTcpClient->close();
+            b_run = false;
             break;
-        } else if (0 == strcmp(cmd_buf, "login")) {
-            Login login;
-            strcpy(login.user_name, "zhangshan");
-            strcpy(login.user_pwd, "123456");
-            easyTcpClient->send_data(&login);
-        } else if (0 == strcmp(cmd_buf, "logout")) {
-            Logout logout;
-            strcpy(logout.user_name, "zhangshan");
-            easyTcpClient->send_data(&logout);
         }
     }
 }
@@ -32,25 +22,33 @@ void handle_command(EasyTcpClient* easyTcpClient)
 int main() {
     setbuf(stdout, nullptr);
     printf("[client start...]\n");
-    EasyTcpClient client;
-    int ret = client.connect("127.0.0.1", 4567);
-    if (SOCKET_ERROR == ret)
-    {
-        printf("connect server error\n");
-        return -1;
+    const int n_count = 1000;
+    EasyTcpClient* clients[n_count];
+    for (int i = 0; i < n_count; i++) {
+        clients[i] = new EasyTcpClient();
+        int ret = clients[i]->connect("127.0.0.1", 4567);
+        if (SOCKET_ERROR == ret)
+        {
+            printf("connect server error\n");
+            return -1;
+        }
     }
 
-    std::thread t(handle_command, &client);
+
+    std::thread t(handle_command);
     t.detach();
 
     Login login;
     strcpy(login.user_name, "zhangshan");
     strcpy(login.user_pwd, "123456");
-    while (client.is_run()) {
-        client.on_run();
-        client.send_data(&login);
+    while (b_run) {
+        for (int i = 0; i < n_count; i++) {
+            clients[i]->on_run();
+            clients[i]->send_data(&login);
+        }
     }
-
-    client.close();
+    for (int i = 0; i < n_count; i++) {
+        clients[i]->close();
+    }
     return 0;
 }

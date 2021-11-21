@@ -2,7 +2,6 @@
 
 
 #include <stdio.h>
-#include <cstdint>
 #include <vector>
 
 #include "easy_tcp_server.hpp"
