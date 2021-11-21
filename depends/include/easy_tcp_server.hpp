@@ -9,6 +9,8 @@
     #define _WINSOCK_DEPRECATED_NO_WARNINGS
     #include <windows.h>
     #include <WinSock2.h>
+#include <memory>
+
 #else
     #define INVALID_SOCKET  (SOCKET)(~0)
     #define SOCKET_ERROR            (-1)
@@ -19,7 +21,9 @@
     #include <unistd.h>
 #endif
 
+
 #include "message_header.hpp"
+#include "tcp_client_s.hpp"
 
 class EasyTcpServer
 {
@@ -43,6 +47,8 @@ public:
             printf("listen _socket error\n");
         }
 
+        printf("listen on port<%d> ok\n", port);
+
         return ret;
     }
 
@@ -63,14 +69,14 @@ public:
         FD_SET (_sock, &write_fds);
 
         for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
-            SOCKET cur = *itr;
 
-            FD_SET(cur, &read_fds);
-            FD_SET (cur, &write_fds);
+            SOCKET cur_fd = (*itr)->sock_fd();
 
-            if (max_socket < cur)
+            FD_SET(cur_fd, &read_fds);
+            FD_SET (cur_fd, &write_fds);
+            if (max_socket < cur_fd)
             {
-                max_socket = cur;
+                max_socket = cur_fd;
             }
         }
 
@@ -88,14 +94,16 @@ public:
 
         handle_recv(read_fds);
 
-        handle_write(write_fds);
+        //handle_write(write_fds);
+
+        return 0;
     }
 
     void close()
     {
         //close all client socket.
         for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
-            close_socket(*itr);
+            close_socket((*itr)->sock_fd());
         }
 
         _clients.clear();
@@ -149,19 +157,19 @@ private:
     {
         for (auto itr = _clients.begin(); itr != _clients.end(); ++itr)
         {
-            send_data(*itr, header);
+            send_data((*itr)->sock_fd(), header);
         }
     }
 
     void handle_recv(const fd_set& read_fds)
     {
         for (auto itr = _clients.begin(); itr != _clients.end();) {
-            SOCKET cur_socket = *itr;
+            SOCKET cur_socket = (*itr)->sock_fd();
 
             if (FD_ISSET(cur_socket, &read_fds)) {
                 FD_CLR(cur_socket, &read_fds);
 
-                if (recv_data(cur_socket) < 0) {
+                if (recv_data(*itr) < 0) {
                     close_socket(cur_socket);
                     itr = _clients.erase(itr);
                     continue;
@@ -175,7 +183,7 @@ private:
     void handle_write(const fd_set& write_fds)
     {
         for (auto itr = _clients.begin(); itr != _clients.end();) {
-            SOCKET cur_socket = *itr;
+            SOCKET cur_socket = (*itr)->sock_fd();
 
             if (FD_ISSET(cur_socket, &write_fds)) {
                 FD_CLR(cur_socket, &write_fds);
@@ -207,64 +215,93 @@ private:
         newUserJoin.user_id = new_socket;
         send2all(&newUserJoin);
 
-        _clients.push_back(new_socket);
+        _clients.push_back(std::make_shared<TcpClientS>(new_socket));
 #ifdef _WIN32
         printf("new client join socket:%llu, ip:%s\n", new_socket, inet_ntoa(client_addr.sin_addr));
 #else
         printf("new client join socket:%d, ip:%s\n", new_socket, inet_ntoa(client_addr.sin_addr));
 #endif
+        return 0;
     }
 
-    int recv_data(SOCKET socket)
+    int recv_data(std::shared_ptr<TcpClientS> clientS)
     {
         char buf[4096] = {};
-        int len = recv(socket, (char*)buf, sizeof(DataHeader), 0);
-        DataHeader* header = (DataHeader*)buf;
-        if (len < 0)
-        {
-            printf("read data header fail.\n");
+        int len = recv(clientS->sock_fd(), (char*)buf, 4096, 0);
+        //printf("len:%d\n", len);
+        if (len <= 0) {
+            printf("<%d> recv_data error\n", (int)clientS->sock_fd());
             return -1;
         }
 
-        printf("recv data from client, cmd:%d, data len:%d\n", header->cmd, header->data_length);
+        uint32_t last_pos = clientS->get_last_recv_pos();
+        if (last_pos + len > clientS->capacity()) {
+            printf("<%d> out of buffer error\n", (int)clientS->sock_fd());
+            return -1;
+        }
 
-        recv(socket, (char*)buf + sizeof(DataHeader), header->data_length - sizeof(DataHeader), 0);
+        //
+        memcpy(clientS->buf() + last_pos, buf, len);
+        clientS->set_last_recv_pos(last_pos + len);
 
-        on_net_msg(socket, header);
+        while (clientS->get_last_recv_pos() >= sizeof(DataHeader)) {
+            DataHeader* header = (DataHeader*)clientS->buf();
 
-        return header->data_length;
+            if (clientS->get_last_recv_pos() >= header->data_length) {
+                uint32_t msg_len = header->data_length;
+                uint32_t left_msg_len = clientS->get_last_recv_pos() - msg_len;
+
+                on_net_msg(clientS, header);
+
+                if (left_msg_len > 0) {
+                    memcpy(clientS->buf(), clientS->buf() + msg_len, left_msg_len);
+                }
+
+                clientS->set_last_recv_pos(left_msg_len);
+
+            } else {
+                break;
+            }
+        }
+
+        return 0;
     }
 
-    int on_net_msg(SOCKET sock, DataHeader* header)
+    int on_net_msg(std::shared_ptr<TcpClientS> clientS, DataHeader* header)
     {
+        //static uint32_t msg_count = 0;
         switch (header->cmd) {
             case CMD_LOGIN:
             {
                 Login* login = (Login*)header;
-                printf("user login name:%s, pwd:%s\n", login->user_name, login->user_pwd);
+                //printf("user login name:%s, pwd:%s\n", login->user_name, login->user_pwd);
+
+                //msg_count++;
 
                 LoginResult loginResult;
                 loginResult.code = 0;
-                send(sock, (const char*)&loginResult, sizeof(loginResult), 0);
+                send_data(clientS->sock_fd(), &loginResult);
             }
                 break;
             case CMD_LOGOUT:
             {
                 Logout* logout = (Logout*)header;
-                printf("user logout name:%s\n", logout->user_name);
+                //printf("user logout name:%s\n", logout->user_name);
+
+                //msg_count++;
 
                 LogoutResult logoutResult;
                 logoutResult.code = 0;
-                send(sock, (const char*)&logoutResult, sizeof(logoutResult), 0);
+                send_data(clientS->sock_fd(), &logoutResult);
             }
                 break;
             default:
             {
-                DataHeader dh;
-                send(sock, (const char*)&dh, sizeof(dh), 0);
                 printf("unknown command\n");
             }
         }
+
+        //printf("handle msg count %d\n", msg_count);
 
         return 0;
     }
@@ -299,7 +336,7 @@ private:
 
 private:
     SOCKET _sock = INVALID_SOCKET;
-    std::vector<SOCKET> _clients;
+    std::vector<std::shared_ptr<TcpClientS>> _clients;
 };
 
 #endif //PRACTISE_CPLUSPLUS_NET_EASY_TCP_SERVER_HPP

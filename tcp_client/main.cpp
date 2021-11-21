@@ -43,8 +43,12 @@ int main() {
     std::thread t(handle_command, &client);
     t.detach();
 
+    Login login;
+    strcpy(login.user_name, "zhangshan");
+    strcpy(login.user_pwd, "123456");
     while (client.is_run()) {
         client.on_run();
+        client.send_data(&login);
     }
 
     client.close();

@@ -25,6 +25,7 @@
 #include <thread>
 
 #include "message_header.hpp"
+#include "cell_net_utils.hpp"
 
 class EasyTcpClient
 {
@@ -94,6 +95,8 @@ public:
         if (ret < 0) {
             printf("select error\n");
             return false;
+        } else if (ret == 0) {
+            return true;
         }
 
         if (FD_ISSET(_sock, &read_fds)) {
@@ -123,21 +126,41 @@ public:
 private:
     int recv_data()
     {
+        //每次从 tcp 缓冲区尽可能多的读取数据
         char buf[4096] = {};
-        int len = recv(_sock, buf, sizeof(DataHeader), 0);
-        DataHeader* header = (DataHeader*)buf;
-        if (len < 0) {
-            printf("recv data error\n", _sock);
-            return -1;
-        } else if (len == 0){
-            return 0;
+        int len = recv(_sock, buf, 4096, 0);
+        if (len <= 0) {
+            printf("<%d> recv data error, len:%d\n", (int)_sock, len);
+            return len;
         }
 
-        recv(_sock, buf + sizeof(DataHeader), header->data_length - sizeof(DataHeader), 0);
+        if (_last_recv_pos + len > RECV_BUF_SIZE) {
+            printf("error, recv buf is not enough.\n");
+            return -1;
+        }
 
-        on_net_msg(header);
+        memcpy(_recv_buf + _last_recv_pos, buf, len);
+        _last_recv_pos += len;
 
-        return header->data_length;
+        //是否满足一个消息头长度
+        while (_last_recv_pos >= sizeof(DataHeader)){
+            DataHeader* header = (DataHeader*)_recv_buf;
+            //是否满足一个消息长度
+            if (_last_recv_pos >= header->data_length) {
+                uint32_t msg_len = header->data_length;
+
+                on_net_msg(header);
+
+                _last_recv_pos -= msg_len;
+                if (_last_recv_pos > 0) {
+                    memcpy(_recv_buf, _recv_buf + msg_len, _last_recv_pos);
+                }
+            } else{
+                break;
+            }
+        }
+
+        return 0;
     }
 
     void on_net_msg(DataHeader* header)
@@ -146,13 +169,18 @@ private:
             case CMD_LOGIN_RESULT:
                 {
                     LoginResult* loginResult = (LoginResult*)header;
-                    printf("login result code:%d\n", loginResult->code);
+                    //printf("login result code:%d\n", loginResult->code);
                 }
                 break;
             case CMD_LOGOUT_RESULT:
                 {
                     LogoutResult* logoutResult = (LogoutResult*)header;
-                    printf("logout result code:%d\n", logoutResult->code);
+                    //printf("logout result code:%d\n", logoutResult->code);
+                }
+                break;
+            case CMD_ERROR:
+                {
+                    printf("CMD_ERROR\n");
                 }
                 break;
             default:
@@ -193,10 +221,10 @@ private:
         }
     }
 
-
-
 private:
     SOCKET _sock = INVALID_SOCKET;
+    char _recv_buf[RECV_BUF_SIZE] = {};
+    uint32_t _last_recv_pos = 0;
 };
 
 #endif //PRACTISE_CPLUSPLUS_NET_EASY_TCP_CLIENT_HPP

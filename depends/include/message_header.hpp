@@ -30,6 +30,7 @@ struct Login : public DataHeader
     }
     char user_name[64];
     char user_pwd[64];
+    char data[950];
 };
 
 struct LoginResult : public DataHeader
@@ -40,6 +41,7 @@ struct LoginResult : public DataHeader
         data_length = sizeof(LoginResult);
     }
     uint16_t code;
+    char data[1024];
 };
 
 struct Logout : public DataHeader
