@@ -148,26 +148,26 @@ private:
     {
         switch (header->cmd) {
             case CMD_LOGIN_RESULT:
-                {
-                    LoginResult* loginResult = (LoginResult*)header;
-                    //printf("login result code:%d\n", loginResult->code);
-                }
+            {
+                LoginResult* loginResult = (LoginResult*)header;
+                //printf("login result code:%d\n", loginResult->code);
+            }
                 break;
             case CMD_LOGOUT_RESULT:
-                {
-                    LogoutResult* logout_result = (LogoutResult*)header;
-                    //printf("logout result code:%d\n", logout_result->code);
-                }
+            {
+                LogoutResult* logout_result = (LogoutResult*)header;
+                //printf("logout result code:%d\n", logout_result->code);
+            }
                 break;
             case CMD_NEW_USER_JOIN:
-                {
-                    NewUserJoin* user_join = (NewUserJoin*)header;
-                }
+            {
+                NewUserJoin* user_join = (NewUserJoin*)header;
+            }
                 break;
             case CMD_ERROR:
-                {
-                    printf("CMD_ERROR\n");
-                }
+            {
+                printf("CMD_ERROR\n");
+            }
                 break;
 
             default:

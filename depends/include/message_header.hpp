@@ -30,7 +30,7 @@ struct Login : public DataHeader
     }
     char user_name[64];
     char user_pwd[64];
-    char data[950];
+    char data[200];
 };
 
 struct LoginResult : public DataHeader
