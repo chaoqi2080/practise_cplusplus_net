@@ -3,7 +3,7 @@
 
 volatile bool b_run = true;
 //客户端的数量
-const int n_count = 2000;
+const int n_count = 1000;
 EasyTcpClient* clients[n_count];
 //开启线程数量
 const int t_count = 4;

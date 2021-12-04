@@ -12,6 +12,7 @@ int main() {
     printf("[server start...]\n");
     EasyTcpServer server;
     server.listen(nullptr, 4567);
+    server.start();
 
     //wait for new client connect
     while (server.is_run()) {

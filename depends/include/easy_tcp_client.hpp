@@ -194,20 +194,6 @@ private:
             printf("create socket fail\n");
         }
     }
-
-    void close_socket(SOCKET sock)
-    {
-        if (sock != INVALID_SOCKET)
-        {
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            sock = INVALID_SOCKET;
-        }
-    }
-
 private:
     SOCKET _sock = INVALID_SOCKET;
     char _recv_buf[RECV_BUF_SIZE] = {};

@@ -9,14 +9,12 @@
 #include "tcp_client_s.hpp"
 #include "cell_net_utils.hpp"
 #include "cell_timestamp.hpp"
+#include "cell_server.hpp"
 
 class EasyTcpServer
 {
 public:
-    EasyTcpServer()
-    {
-
-    }
+    EasyTcpServer() = default;
 
     ~EasyTcpServer()
     {
@@ -37,15 +35,29 @@ public:
         return ret;
     }
 
+    void start()
+    {
+        if (!is_run()) {
+            printf("listen must call before start.\n");
+            return;
+        }
+
+        for (int i = 0; i < CELL_THREAD_COUNT; i++) {
+            auto cell_server = std::make_shared<CellServer>(_sock);
+            _cell_servers.push_back(cell_server);
+            //启动收、发工作任务
+            cell_server->start();
+        }
+    }
+
     int on_run()
     {
         fd_set read_fds;
         fd_set write_fds;
+
         timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
-
-        SOCKET max_socket = _sock;
 
         FD_ZERO(&read_fds);
         FD_ZERO(&write_fds);
@@ -53,19 +65,7 @@ public:
         FD_SET(_sock, &read_fds);
         FD_SET (_sock, &write_fds);
 
-        for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
-
-            SOCKET cur_fd = (*itr)->sock_fd();
-
-            FD_SET(cur_fd, &read_fds);
-            FD_SET (cur_fd, &write_fds);
-            if (max_socket < cur_fd)
-            {
-                max_socket = cur_fd;
-            }
-        }
-
-        int nfds = select(max_socket+1, &read_fds, &write_fds, nullptr, &timeout);
+        int nfds = select(_sock + 1, &read_fds, &write_fds, nullptr, &timeout);
         if (nfds < 0) {
             printf("select return < 0, break\n");
             return nfds;
@@ -73,32 +73,15 @@ public:
 
         if (FD_ISSET(_sock, &read_fds)) {
             FD_CLR(_sock, &read_fds);
-
             accept();
         }
-
-        handle_recv(read_fds);
-
-        //handle_write(write_fds);
 
         return 0;
     }
 
     void close()
     {
-        //close all client socket.
-        for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
-            close_socket((*itr)->sock_fd());
-        }
-
-        _clients.clear();
-
-        //close the server socket.
         close_socket(_sock);
-#ifdef _WIN32
-        //clean up the Windows environment.
-        WSACleanup();
-#endif
     }
 
     bool is_run()
@@ -129,61 +112,6 @@ private:
         return ret;
     }
 
-    int send_data(SOCKET sock, DataHeader* header)
-    {
-        if (is_run() && sock != INVALID_SOCKET && header)
-        {
-            return send(sock, (const char*)header, header->data_length, 0);
-        }
-        return SOCKET_ERROR;
-    }
-
-    void send2all(DataHeader* header)
-    {
-        for (auto itr = _clients.begin(); itr != _clients.end(); ++itr)
-        {
-            send_data((*itr)->sock_fd(), header);
-        }
-    }
-
-    void handle_recv(const fd_set& read_fds)
-    {
-        for (auto itr = _clients.begin(); itr != _clients.end();) {
-            SOCKET cur_socket = (*itr)->sock_fd();
-
-            if (FD_ISSET(cur_socket, &read_fds)) {
-                FD_CLR(cur_socket, &read_fds);
-
-                if (recv_data(*itr) < 0) {
-                    close_socket(cur_socket);
-                    itr = _clients.erase(itr);
-                    continue;
-                }
-            }
-
-            ++itr;
-        }
-    }
-
-    void handle_write(const fd_set& write_fds)
-    {
-        for (auto itr = _clients.begin(); itr != _clients.end();) {
-            SOCKET cur_socket = (*itr)->sock_fd();
-
-            if (FD_ISSET(cur_socket, &write_fds)) {
-                FD_CLR(cur_socket, &write_fds);
-
-//                if (send_data(cur_socket) < 0) {
-//                    close_socket(cur_socket);
-//                    itr = _clients.erase(itr);
-//                    continue;
-//                }
-            }
-
-            ++itr;
-        }
-    }
-
     int accept()
     {
         sockaddr_in client_addr = {};
@@ -196,106 +124,20 @@ private:
             return new_socket;
         }
 
-        NewUserJoin newUserJoin = {};
-        newUserJoin.user_id = new_socket;
-        send2all(&newUserJoin);
-
-        _clients.push_back(std::make_shared<TcpClientS>(new_socket));
-//#ifdef _WIN32
-//        printf("<%d> new client join socket:%llu, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
-//#else
-//        printf("<%d> new client join socket:%d, ip:%s\n", (int)_sock, new_socket, inet_ntoa(client_addr.sin_addr));
-//#endif
+        add_client2cell_server(new_socket);
         return 0;
     }
 
-    int recv_data(std::shared_ptr<TcpClientS> clientS)
+    void add_client2cell_server(SOCKET sock)
     {
-        char buf[4096] = {};
-        int len = recv(clientS->sock_fd(), (char*)buf, 4096, 0);
-        //printf("len:%d\n", len);
-        if (len <= 0) {
-            printf("<%d> recv_data error\n", (int)clientS->sock_fd());
-            return -1;
-        }
-
-        uint32_t last_pos = clientS->get_last_recv_pos();
-        if (last_pos + len > clientS->capacity()) {
-            printf("<%d> out of buffer error\n", (int)clientS->sock_fd());
-            return -1;
-        }
-
-        //
-        memcpy(clientS->buf() + last_pos, buf, len);
-        clientS->set_last_recv_pos(last_pos + len);
-
-        while (clientS->get_last_recv_pos() >= sizeof(DataHeader)) {
-            DataHeader* header = (DataHeader*)clientS->buf();
-
-            if (clientS->get_last_recv_pos() >= header->data_length) {
-                uint32_t msg_len = header->data_length;
-                uint32_t left_msg_len = clientS->get_last_recv_pos() - msg_len;
-
-                on_net_msg(clientS, header);
-
-                if (left_msg_len > 0) {
-                    memcpy(clientS->buf(), clientS->buf() + msg_len, left_msg_len);
-                }
-
-                clientS->set_last_recv_pos(left_msg_len);
-
-            } else {
-                break;
+        auto min_cell_server = _cell_servers[0];
+        for (auto cell_server : _cell_servers) {
+            if (min_cell_server->get_client_count() > cell_server->get_client_count()) {
+                min_cell_server = cell_server;
             }
         }
 
-        return 0;
-    }
-
-    int on_net_msg(std::shared_ptr<TcpClientS> clientS, DataHeader* header)
-    {
-        _recv_count++;
-        auto t = _timer.get_elapsed_seconds();
-        if (t >= 1.0) {
-            printf("<%lf> socket<%d>clients<%d>recv_count<%d>\n", t, (int)_sock, (int)_clients.size(), _recv_count);
-            _timer.update();
-            _recv_count = 0;
-        }
-
-        switch (header->cmd) {
-            case CMD_LOGIN:
-            {
-                Login* login = (Login*)header;
-                //printf("user login name:%s, pwd:%s\n", login->user_name, login->user_pwd);
-
-                //msg_count++;
-
-                LoginResult loginResult;
-                loginResult.code = 0;
-                send_data(clientS->sock_fd(), &loginResult);
-            }
-                break;
-            case CMD_LOGOUT:
-            {
-                Logout* logout = (Logout*)header;
-                //printf("user logout name:%s\n", logout->user_name);
-
-                //msg_count++;
-
-                LogoutResult logoutResult;
-                logoutResult.code = 0;
-                send_data(clientS->sock_fd(), &logoutResult);
-            }
-                break;
-            default:
-            {
-                printf("unknown command\n");
-            }
-        }
-
-        //printf("handle msg count %d\n", msg_count);
-
-        return 0;
+        min_cell_server->add_client(std::make_shared<TcpClientS>(sock));
     }
 
     void init_socket()
@@ -304,33 +146,16 @@ private:
         {
             return;
         }
-#ifdef _WIN32
-        //prepare the Windows environment.
-        WORD ver = MAKEWORD(2, 2);
-        WSADATA data;
-        WSAStartup(ver, &data);
-#endif
-        _sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    }
 
-    void close_socket(SOCKET sock)
-    {
-        if (sock != INVALID_SOCKET)
-        {
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            sock = INVALID_SOCKET;
-        }
+        static NetEnv obj;
+        _sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     }
 
 private:
     SOCKET _sock = INVALID_SOCKET;
-    std::vector<std::shared_ptr<TcpClientS>> _clients;
-    CellTimestamp _timer;
-    uint32_t _recv_count = 0;
+    //CellTimestamp _timer;
+    //uint32_t _recv_count = 0;
+    std::vector<std::shared_ptr<CellServer>> _cell_servers;
 };
 
 #endif //PRACTISE_CPLUSPLUS_NET_EASY_TCP_SERVER_HPP
