@@ -56,19 +56,16 @@ public:
         time4msg();
 
         fd_set read_fds;
-        fd_set write_fds;
 
         timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
 
         FD_ZERO(&read_fds);
-        FD_ZERO(&write_fds);
-        //
-        FD_SET(_sock, &read_fds);
-        FD_SET (_sock, &write_fds);
 
-        int nfds = select(_sock + 1, &read_fds, &write_fds, nullptr, &timeout);
+        FD_SET(_sock, &read_fds);
+
+        int nfds = select(_sock + 1, &read_fds, nullptr, nullptr, &timeout);
         if (nfds < 0) {
             printf("select return < 0, break\n");
             return nfds;
@@ -98,7 +95,7 @@ public:
         auto t = _timer.get_elapsed_seconds();
         if (t >= 1.0) {
             int msg_count = 0;
-            for (auto &&ser : _cell_servers) {
+            for (const auto &ser : _cell_servers) {
                 msg_count += ser->get_msg_count();
                 ser->reset_msg_count();
             }

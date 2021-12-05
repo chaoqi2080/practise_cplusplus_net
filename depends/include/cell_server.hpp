@@ -76,7 +76,6 @@ public:
             SOCKET max_socket = _clients[0]->sock_fd();
 
             for (auto itr = _clients.begin(); itr != _clients.end(); ++itr) {
-
                 SOCKET cur_fd = (*itr)->sock_fd();
 
                 FD_SET(cur_fd, &read_fds);
