@@ -4,7 +4,7 @@
 volatile bool b_run = true;
 //客户端的数量
 const int n_count = 10000;
-EasyTcpClient* clients[n_count];
+std::shared_ptr<EasyTcpClient> clients[n_count];
 //开启线程数量
 const int t_count = 4;
 
@@ -18,7 +18,7 @@ void sender(int id)
     printf("sender id:%d start:%d, end:%d\n", id, start, end);
 
     for (int i = start; i < end; i++) {
-        clients[i] = new EasyTcpClient();
+        clients[i] = std::make_shared<EasyTcpClient>();
     }
 
     for (int i = start; i < end; i++) {
