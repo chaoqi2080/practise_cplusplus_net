@@ -11,7 +11,7 @@
 #include "cell_timestamp.hpp"
 #include "cell_server.hpp"
 
-class EasyTcpServer
+class EasyTcpServer : public INetEvent
 {
 public:
     EasyTcpServer() = default;
@@ -45,6 +45,7 @@ public:
         for (int i = 0; i < CELL_THREAD_COUNT; i++) {
             auto cell_server = std::make_shared<CellServer>(_sock);
             _cell_servers.push_back(cell_server);
+            cell_server->set_net_obj(std::make_shared<INetEvent*>(this));
             //启动收、发工作任务
             cell_server->start();
         }
@@ -52,6 +53,8 @@ public:
 
     int on_run()
     {
+        time4msg();
+
         fd_set read_fds;
         fd_set write_fds;
 
@@ -87,6 +90,31 @@ public:
     bool is_run()
     {
         return _sock != INVALID_SOCKET;
+    }
+
+public:
+    void time4msg()
+    {
+        auto t = _timer.get_elapsed_seconds();
+        if (t >= 1.0) {
+            int msg_count = 0;
+            for (auto &&ser : _cell_servers) {
+                msg_count += ser->get_msg_count();
+                ser->reset_msg_count();
+            }
+
+            printf("<%lf> socket<%d>clients<%d>msg_count<%d>\n", t, (int)_sock, (int)_client_count, (int)(msg_count/t));
+            _timer.update();
+        }
+    }
+
+    virtual void on_user_leave(std::shared_ptr<TcpClientS>) override
+    {
+        _client_count--;
+    }
+
+    virtual void on_net_message(std::shared_ptr<TcpClientS>) override
+    {
     }
 
 private:
@@ -138,6 +166,7 @@ private:
         }
 
         min_cell_server->add_client(std::make_shared<TcpClientS>(sock));
+        _client_count++;
     }
 
     void init_socket()
@@ -153,8 +182,9 @@ private:
 
 private:
     SOCKET _sock = INVALID_SOCKET;
-    //CellTimestamp _timer;
-    //uint32_t _recv_count = 0;
+    CellTimestamp _timer;
+    std::atomic_int32_t _client_count{0};
+    //std::atomic_int32_t _msg_count{0};
     std::vector<std::shared_ptr<CellServer>> _cell_servers;
 };
 

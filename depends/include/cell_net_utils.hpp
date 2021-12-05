@@ -6,7 +6,7 @@
 #define PRACTISE_CPLUSPLUS_NET_CELL_NET_UTILS_HPP
 
 #ifdef _WIN32
-    #define FD_SETSIZE 2048
+    #define FD_SETSIZE 10240
     #define WIN32_LEAN_AND_MEAN
     #define _WINSOCK_DEPRECATED_NO_WARNINGS
     #include <windows.h>
@@ -31,8 +31,9 @@
 #include <map>
 #include <mutex>
 
-//#include "tcp_client_s.hpp"
 #include "message_header.hpp"
+
+using namespace std::chrono_literals;
 
 const uint32_t RECV_BUF_SIZE = 4096 * 20;
 const int CELL_THREAD_COUNT = 4;

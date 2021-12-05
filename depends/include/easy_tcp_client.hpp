@@ -11,10 +11,7 @@
 class EasyTcpClient
 {
 public:
-    EasyTcpClient()
-    {
-
-    }
+    EasyTcpClient() = default;
 
     virtual ~EasyTcpClient()
     {

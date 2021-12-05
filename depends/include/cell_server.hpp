@@ -6,6 +6,7 @@
 #define PRACTISE_CPLUSPLUS_NET_CELL_SERVER_HPP
 
 #include "cell_net_utils.hpp"
+#include "i_net_event.hpp"
 
 class CellServer
 {
@@ -22,6 +23,11 @@ public:
         _sock = INVALID_SOCKET;
         _clients.clear();
         _clients_buff.clear();
+    }
+
+    void set_net_obj(std::shared_ptr<INetEvent*> p)
+    {
+        _parent = p;
     }
 
     size_t get_client_count()
@@ -54,8 +60,7 @@ public:
             }
 
             if (_clients.empty()) {
-                std::chrono::milliseconds t(1);
-                std::this_thread::sleep_for(t);
+                std::this_thread::sleep_for(1ms);
                 continue;
             }
 
@@ -146,6 +151,10 @@ public:
                 FD_CLR(client->sock_fd(), &read_fds);
 
                 if (recv_data(client) < 0) {
+                    if (_parent) {
+                        (*_parent)->on_user_leave(client);
+                    }
+
                     close_socket(client->sock_fd());
                     itr = _clients.erase(itr);
                     continue;
@@ -157,12 +166,9 @@ public:
 
     int on_net_msg(std::shared_ptr<TcpClientS> clientS, DataHeader* header)
     {
-//        _recv_count++;
-//        auto t = _timer.get_elapsed_seconds();
-//        if (t >= 1.0) {
-//            printf("<%lf> socket<%d>clients<%d>recv_count<%d>\n", t, (int)_sock, (int)_clients.size(), _recv_count);
-//            _timer.update();
-//            _recv_count = 0;
+        _msg_count++;
+//        if (_parent) {
+//            (*_parent)->on_net_message(clientS);
 //        }
 
         switch (header->cmd) {
@@ -222,6 +228,17 @@ public:
             send_data((*itr)->sock_fd(), header);
         }
     }
+
+    int get_msg_count()
+    {
+        return (int)_msg_count;
+    }
+
+    void reset_msg_count()
+    {
+        _msg_count = 0;
+    }
+
 private:
     SOCKET _sock = INVALID_SOCKET;
     //当前工作的客户端
@@ -232,6 +249,10 @@ private:
     std::mutex _mutex;
     //工作子线程
     std::shared_ptr<std::thread> _pthread = nullptr;
+
+    std::shared_ptr<INetEvent*> _parent = nullptr;
+
+    std::atomic_int32_t _msg_count{0};
 };
 
 #endif //PRACTISE_CPLUSPLUS_NET_CELL_SERVER_HPP

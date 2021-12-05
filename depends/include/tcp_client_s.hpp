@@ -15,10 +15,7 @@ public:
         _sock_fd = sock;
     }
 
-    ~TcpClientS()
-    {
-
-    }
+    ~TcpClientS() = default;
 
     char* buf()
     {

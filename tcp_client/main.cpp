@@ -3,7 +3,7 @@
 
 volatile bool b_run = true;
 //客户端的数量
-const int n_count = 1000;
+const int n_count = 10000;
 EasyTcpClient* clients[n_count];
 //开启线程数量
 const int t_count = 4;
@@ -17,7 +17,6 @@ void sender(int id)
 
     printf("sender id:%d start:%d, end:%d\n", id, start, end);
 
-
     for (int i = start; i < end; i++) {
         clients[i] = new EasyTcpClient();
     }
@@ -30,6 +29,9 @@ void sender(int id)
             return;
         }
     }
+
+    //
+    std::this_thread::sleep_for(5s);
 
     Login login;
     strcpy(login.user_name, "zhangshan");
@@ -66,7 +68,6 @@ void handle_command()
 int main() {
     setbuf(stdout, nullptr);
     printf("[client start...]\n");
-
 
     for (int i = 1; i <= t_count; i++) {
         std::thread t(sender, i);
