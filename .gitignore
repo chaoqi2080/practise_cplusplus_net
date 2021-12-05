@@ -6,3 +6,5 @@ bin
 cmake-build-debug/Testing
 .idea
 cmake-build-debug
+vs_projs/tcp_server/.vs
+vs_projs/temp
